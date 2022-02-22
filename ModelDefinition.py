@@ -1,4 +1,4 @@
-from .DataClasses import FRComponent, TRComponent, ARComponent, ExoComponent
+from .data_utils import FRComponent, TRComponent, ARComponent, ExoComponent
 
 class ModelDefinition():
     def __init__(self):
@@ -15,7 +15,7 @@ class ModelDefinition():
                 the input NeuronData.
         param_bounds: [lower bound, upper bound] for the beta parameter for the task relevant component
         """
-        self.tr_comps.append(TRComponent(name, param_bounds))
+        self.tr_comps.append(TRComponent("tr_" + name, param_bounds))
 
     def addARComponent(self, name: str = 'intrinsic', depth: int = 5, param_bounds: list[int] = [-5, 5]):
         """
@@ -25,7 +25,7 @@ class ModelDefinition():
         depth:  Number of previous bins to regress over
         param_bounds:  [lower bound, upper bound] for all the beta parameters for the AR component
         """
-        self.ar_comps.append(ARComponent(name, depth, param_bounds))
+        self.ar_comps.append(ARComponent("ar_" + name, depth, param_bounds))
 
     def addExoComponent(self, name: str, depth: int = 5, amp_bounds: list[int] = [-5, 5], tau_bounds: list[int] = [0, 30]):
         """
@@ -37,5 +37,5 @@ class ModelDefinition():
         amp_bounds: [lower bound, upper bound] for the amplitude parameter for the exogenous component
         tau_bounds: [lower bound, upper bound] for the tau parameter for the exogenous component
         """
-        self.exo_comps.append(ExoComponent(name, depth, amp_bounds, tau_bounds))
+        self.exo_comps.append(ExoComponent("ex_" + name, depth, amp_bounds, tau_bounds))
 

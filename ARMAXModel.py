@@ -1,15 +1,9 @@
 import numpy as np
+from numpy.linalg import eigvals
 from scipy.optimize import minimize
 
 from .ModelDefinition import ModelDefinition
 
-# TODO priorities
-# - transform nerondata to model input based on model definition/construction
-# - actually test the model, and write demo notebook
-# - write code to extract intrinsic and seasonal timescales using eignvalue stuff 
-
-# - write cv/more complex fitting function
-# - write autocorrelation timescale estimation method 
 class ARMAXModel():
     def __init__(self, model_definition: ModelDefinition):
         """
@@ -48,7 +42,7 @@ class ARMAXModel():
     def fit(self, X, y):
         vars, times = self.__separate_predictors(X)
         min_func = lambda params: np.square(y-self.model(params, vars, times))
-
+        
         res = minimize(min_func, self.params)
 
         if not res.success:
@@ -82,12 +76,48 @@ class ARMAXModel():
             else:
                 raise ValueError(f"{param_name} is not a valid parameter name.")
 
-    def get_params(self):
+    def get_params(self, intrinsic_size, seasonal_size):
         param_dict = dict()
         for name, value in zip(self.param_labels, self.params):
             param_dict[name] = value
 
+        ar_taus = self.__ar_coef_to_tau(intrinsic_size, seasonal_size)
+        for tau, ar in zip(ar_taus, self.model_definition.ar_comps):
+            param_dict[f'{ar.name}_tau'] = tau
+
         return param_dict
+
+    def __ar_coef_to_tau(self, intrinsic_size, seasonal_size):
+        taus = []
+        for ar in self.model_definition.ar_comps:
+            coeffs = []
+            ar_params = [f'{ar.name}_{idx}' for idx in range(ar.depth)]
+            for i, param in enumerate(ar_params):
+                idx = self.param_labels.index(param)
+                coeffs.append(self.params[idx])
+                if ar.name == 'ar_intrinsic':
+                    delta_t = intrinsic_size
+                elif ar.name == 'ar_seasonal':
+                    delta_t = seasonal_size
+            tau = self.__compute_tau_abs(coeffs, delta_t)
+            taus.append(tau)
+        
+        return taus
+    
+    def __compute_tau_abs(self, coeffs, delta_t):
+        lambdas, _ = self.__compute_eigen_general(coeffs)
+        tau = np.max(delta_t/np.log(np.abs(lambdas)))
+        return tau
+    
+    def __compute_eigen_general(self, coeffs):
+        coeffs = np.array(coeffs)
+        n = coeffs.size
+        eigen_mat = np.vstack((coeffs, np.hstack((np.identity(n-1),np.zeros((n-1,1))))))
+        lambdas = eigvals(eigen_mat)
+        real_flag = np.ones(shape=(n))
+        for i in range(n):
+            real_flag[i] = np.isreal(lambdas[i])
+        return lambdas, real_flag
 
     def __initialize_model(self, model_definition: ModelDefinition):
         """
