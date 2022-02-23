@@ -41,9 +41,9 @@ class ARMAXModel():
 
     def fit(self, X, y):
         vars, times = self.__separate_predictors(X)
-        min_func = lambda params: np.square(y-self.model(params, vars, times))
-        
-        res = minimize(min_func, self.params)
+        min_func = lambda params: np.sum(np.square(y-self.model(params, vars, times)))/vars.shape[0]
+
+        res = minimize(min_func, self.params, method = 'Nelder-Mead')
 
         if not res.success:
             raise ValueError(f'optimization failed: {res.message}')
@@ -60,7 +60,6 @@ class ARMAXModel():
         corr_mtx = np.corrcoef(y, y_pred)
         r_sq = corr_mtx[0, 1] ** 2
         return r_sq
-
 
     def __separate_predictors(self, X):
         n = len(self.signal_labels)
@@ -154,7 +153,7 @@ class ARMAXModel():
         signal_labels.append(model_definition.fr_comp.name)
 
         def exo_fun(vars, delta_time, tau):
-            op = np.exp(-delta_time/tau)*vars
+            op = np.exp(-(delta_time/1000)/tau)*vars
             return np.sum(op, axis=1) # sum along rows and return
 
         def model_fun(params, vars, times):
@@ -166,6 +165,8 @@ class ARMAXModel():
                 next_vt_idx = vt_idx + exo.depth
                 output += vars[:, -1]*params[p_idx]*exo_fun(vars[:,vt_idx:next_vt_idx], times[:,vt_idx:next_vt_idx], params[p_idx+1])
                 vt_idx = next_vt_idx
+            
+            return output
 
         self.model = model_fun
         self.param_bounds = param_bounds
