@@ -2,8 +2,7 @@ from scipy.io import loadmat
 from neurotime.NeuronData import NeuronData
 from neurotime.data_utils import SignalTimes, SignalValues
 
-from neurotime.ModelDefinition import ModelDefinition
-from neurotime.ARMAXModel import ARMAXModel
+from neurotime.ARMAXModel import ARMAXModel, ModelDefinition
 
 data_path = './example_data/example_neuron_data.mat'
 mat_contents = loadmat(data_path)
@@ -33,14 +32,14 @@ neuron_data = NeuronData(trial_start_times = tst, trial_end_times = tet,
 
 # here, we add 3 task relevant, 2 autoregressive, and 2 exogenous terms to the model
 model_definition = ModelDefinition()
-#model_definition.addTRComponent(name = 'reward')
-#model_definition.addTRComponent(name = 'choice_side')
-#model_definition.addTRComponent(name = 'choice_stimulus')
-#model_definition.addARComponent(name = 'intrinsic')
-#model_definition.addARComponent(name = 'seasonal')
-#model_definition.addExoComponent(name = 'reward')
-#model_definition.addExoComponent(name = 'choice_side')
-#model_definition.addExoComponent(name = 'choice_stimulus')
+# model_definition.addTRComponent(name = 'reward')
+# model_definition.addTRComponent(name = 'choice_side')
+# model_definition.addTRComponent(name = 'choice_stimulus')
+# model_definition.addARComponent(name = 'intrinsic')
+model_definition.addARComponent(name = 'seasonal')
+# model_definition.addExoComponent(name = 'reward')
+# model_definition.addExoComponent(name = 'choice_side')
+# model_definition.addExoComponent(name = 'choice_stimulus')
 
 # now, we construct the ARMAX model
 armax_model = ARMAXModel(model_definition=model_definition)
@@ -50,5 +49,10 @@ X, y, i_size, s_size = neuron_data.to_armax_input(model = armax_model, model_def
 
 # next, call fit function
 armax_model.fit(X, y)
+
+# finally, we report fitting results
 r_sq = armax_model.score(X, y)
-print(r_sq)
+print(f'Model Performance: R^2={r_sq}')
+
+params = armax_model.get_params(intrinsic_size=i_size, seasonal_size=s_size)
+print(f'Model parameters: {params}')

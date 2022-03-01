@@ -1,2 +1,4 @@
 *.pyc
 *.mat
+*.npy
+volatility_project/data/

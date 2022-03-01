@@ -1,7 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
-from .ARMAXModel import ARMAXModel
-from .ModelDefinition import ModelDefinition
+from .ARMAXModel import ARMAXModel, ModelDefinition
 from .data_utils import SignalTimes, SignalValues
 
 @dataclass
@@ -147,7 +146,7 @@ class NeuronData:
 
         return binned_spikes, bin_times
 
-    def __remove_nan_rows(self, X, y, display='true'):
+    def __remove_nan_rows(self, X, y, display=False):
         nrows = X.shape[0]
         # keep rows where neither x nor y is nan
         rows_no_nan = np.logical_and(~np.isnan(X).any(axis=1), ~np.isnan(y)) 

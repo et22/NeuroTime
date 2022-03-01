@@ -2,7 +2,47 @@ import numpy as np
 from numpy.linalg import eigvals
 from scipy.optimize import minimize
 
-from .ModelDefinition import ModelDefinition
+from .data_utils import FRComponent, TRComponent, ARComponent, ExoComponent
+
+class ModelDefinition():
+    def __init__(self):
+        self.fr_comp = FRComponent('mean_fr')
+        self.tr_comps = []
+        self.ar_comps = []
+        self.exo_comps = []
+
+    def addTRComponent(self, name: str, param_bounds: list[int] = [-5, 5]):
+        """
+        Adds task relevant component to model. 
+        Optional keyword arguments:
+        name:   Name of task relevant component. Must be the name of a signal field in 
+                the input NeuronData.
+        param_bounds: [lower bound, upper bound] for the beta parameter for the task relevant component
+        """
+        self.tr_comps.append(TRComponent("tr_" + name, param_bounds))
+
+    def addARComponent(self, name: str = 'intrinsic', depth: int = 5, param_bounds: list[int] = [-5, 5]):
+        """
+        Adds autoregressive component to model. 
+        Optional keyword arguments:
+        name:   'intrinsic' or 'seasonal'
+        depth:  Number of previous bins to regress over
+        param_bounds:  [lower bound, upper bound] for all the beta parameters for the AR component
+        """
+        self.ar_comps.append(ARComponent("ar_" + name, depth, param_bounds))
+
+    def addExoComponent(self, name: str, depth: int = 5, amp_bounds: list[int] = [-5, 5], tau_bounds: list[int] = [0, 30]):
+        """
+        Adds exogenous component to model. 
+        Optional keyword arguments:
+        name:   Name of exogneous component. Must be the name of a signal field in 
+                the input NeuronData.
+        depth:  Number of previous trials to regress over
+        amp_bounds: [lower bound, upper bound] for the amplitude parameter for the exogenous component
+        tau_bounds: [lower bound, upper bound] for the tau parameter for the exogenous component
+        """
+        self.exo_comps.append(ExoComponent("ex_" + name, depth, amp_bounds, tau_bounds))
+
 
 class ARMAXModel():
     def __init__(self, model_definition: ModelDefinition):
@@ -37,18 +77,80 @@ class ARMAXModel():
         """
         self.model_definition = model_definition
         self.__initialize_model(model_definition)
-        self.__initialize_parameters()
+        self.params = self.__initialize_parameters()
 
-    def fit(self, X, y):
+    def fit(self, X, y, fit_shuffled = False, n_shuffles = 1, r_sq_threshold = 1e-4):
         vars, times = self.__separate_predictors(X)
-        min_func = lambda params: np.sum(np.square(y-self.model(params, vars, times)))/vars.shape[0]
 
-        res = minimize(min_func, self.params, method = 'Nelder-Mead')
+        # smart initialization
+        min_params = self.params
+        max_score = 0
+        for i in range(10):
+            init_params = self.__initialize_parameters()
+            y_pred = self.model(init_params, vars, times)
+            r_sq = self.__score(y, y_pred)
+            if r_sq > max_score:
+                min_params = init_params
+                max_score = r_sq
+        self.params = min_params
+
+        # fit
+        self.params = self.__fit(self.params, y, vars, times)
+
+        if fit_shuffled:
+            r_sqs = []
+            for _ in range(n_shuffles):
+                # shuffle array
+                vars_shuffled = vars.copy()
+                for i in range(vars_shuffled.shape[1]):
+                    np.random.shuffle(vars_shuffled[:,i])
+
+                # fit shuffled version
+                self.shuffled_params = self.__initialize_parameters()
+                self.shuffled_params = self.__fit(self.shuffled_params, y, vars_shuffled, times)
+                y_pred = self.model(self.shuffled_params, vars_shuffled, times)
+                r_sq = self.__score(y, y_pred)
+                r_sqs.append(r_sq*10)
+            
+            y_pred = self.model(self.params, vars, times)
+            r_sq = self.__score(y, y_pred)
+
+            self.significant = r_sq > max(r_sqs)
+        else:
+            y_pred = self.model(self.params, vars, times)
+            r_sq = self.__score(y, y_pred)
+            self.r_sq = r_sq
+            self.significant = r_sq > r_sq_threshold
+
+    def fit_shuffled(self, X, y, n_shuffles = 3):
+        vars, times = self.__separate_predictors(X)
+        r_sqs = []
+        shuffle_params = []
+        for _ in range(n_shuffles):
+            # shuffle array
+            vars_shuffled = vars.copy()
+            for i in range(vars_shuffled.shape[1]):
+                np.random.shuffle(vars_shuffled[:,i])
+
+            # fit shuffled version
+            self.shuffled_params = self.__initialize_parameters()
+            self.shuffled_params = self.__fit(self.shuffled_params, y, vars_shuffled, times)
+            y_pred = self.model(self.shuffled_params, vars_shuffled, times)
+            r_sq = self.__score(y, y_pred)
+            r_sqs.append(r_sq)
+            shuffle_params.append(self.shuffled_params)
+
+        return r_sqs, shuffle_params
+
+    def __fit(self, init_params, y, vars, times):
+        min_func = lambda params: np.sum(np.square(y-self.model(params, vars, times)))/vars.shape[0]
+        res = minimize(min_func, init_params, method = 'Nelder-Mead', options={'disp': False, 'maxiter': 10e3})
 
         if not res.success:
-            raise ValueError(f'optimization failed: {res.message}')
+            print(f'optimization failed: {res.message}')
+            return init_params
         else:
-            self.params = res.x
+            return res.x  
 
     def predict(self, X):
         vars, times = self.__separate_predictors(X)
@@ -57,6 +159,9 @@ class ARMAXModel():
 
     def score(self, X, y):
         y_pred = self.predict(X)
+        return self.__score(y, y_pred)
+
+    def __score(self, y, y_pred):
         corr_mtx = np.corrcoef(y, y_pred)
         r_sq = corr_mtx[0, 1] ** 2
         return r_sq
@@ -105,7 +210,7 @@ class ARMAXModel():
     
     def __compute_tau_abs(self, coeffs, delta_t):
         lambdas, _ = self.__compute_eigen_general(coeffs)
-        tau = np.max(delta_t/np.log(np.abs(lambdas)))
+        tau = np.max(-delta_t/np.log(np.abs(lambdas)))
         return tau
     
     def __compute_eigen_general(self, coeffs):
@@ -180,4 +285,4 @@ class ARMAXModel():
                 bounds = (0, 1)
             params.append(np.random.uniform(low=bounds[0], high=bounds[1]))
 
-        self.params = params
+        return params
