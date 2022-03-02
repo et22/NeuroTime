@@ -78,7 +78,7 @@ if __name__ == '__main__':
     for p_idx, paths in enumerate(paths_list):
         #pool.starmap(fit_neurons, [(p_idx, paths, n_idx, path, paths_list) for n_idx, path in enumerate(paths)])
         for n_idx, path in enumerate(paths):
-            #try:
-            fit_neurons(p_idx, paths, n_idx, path, paths_list)
-            #except Exception as e:
-            #    print(e)
+            try:
+                fit_neurons(p_idx, paths, n_idx, path, paths_list)
+            except Exception as e:
+                print(e)

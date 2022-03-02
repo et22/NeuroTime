@@ -2,3 +2,4 @@
 *.mat
 *.npy
 volatility_project/data/
+volatility_project/figures/
